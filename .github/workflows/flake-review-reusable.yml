@@ -1,0 +1,100 @@
+name: Flake Review (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      flake-ref:
+        description: "Nix flake ref for flake-review"
+        type: string
+        default: "github:ojsef39/flake-review#flake-review"
+      matrix:
+        description: "JSON array of {runner, systems, name} objects"
+        type: string
+        default: '[{"runner":"macos-latest","systems":"aarch64-darwin,x86_64-darwin","name":"darwin"},{"runner":"ubuntu-latest","systems":"x86_64-linux","name":"linux"},{"runner":"ubuntu-24.04-arm","systems":"aarch64-linux","name":"linux-arm"}]'
+      max-workers:
+        description: "Max parallel build workers"
+        type: number
+        default: 4
+      concurrency-group:
+        description: "Concurrency group for cancelling outdated runs"
+        type: string
+        required: false
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: false
+
+concurrency:
+  group: ${{ inputs.concurrency-group || format('{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        with:
+          extra-conf: |
+            extra-experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
+            trusted-substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ojsef39.cachix.org-1:Pe8zOhPVMt4fa/2HYlquHkTnGX3EH7lC9xMyCA2zM3Y= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v16
+        with:
+          name: ojsef39
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+      - name: Review ${{ matrix.name }} packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          nix run ${{ inputs.flake-ref }} -- pr \
+            "${{ github.event.pull_request.html_url }}" \
+            --systems ${{ matrix.systems }} \
+            --max-workers ${{ inputs.max-workers }} \
+            --output-file ${{ matrix.name }}-report.json \
+            --output-format json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.name }}-report
+          path: ${{ matrix.name }}-report.json
+
+  post-results:
+    needs: [review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: reports
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        with:
+          extra-conf: |
+            extra-experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org https://ojsef39.cachix.org
+            trusted-substituters = https://cache.nixos.org https://ojsef39.cachix.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ojsef39.cachix.org-1:Pe8zOhPVMt4fa/2HYlquHkTnGX3EH7lC9xMyCA2zM3Y=
+      - name: Merge and post results
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          json_files=(reports/*/*.json)
+          if [ "${#json_files[@]}" -eq 0 ]; then
+            echo "No report files found - no packages changed across all platforms."
+            exit 0
+          fi
+          nix run ${{ inputs.flake-ref }} -- merge-reports \
+            "${json_files[@]}" \
+            --title "Flake Review Results for [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})" \
+            --post-result \
+            --pr-url "${{ github.event.pull_request.html_url }}"

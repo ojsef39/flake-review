@@ -1,0 +1,31 @@
+name: Track TODOs
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      MANUAL_COMMIT_REF:
+        description: "The SHA of the commit to get the diff for"
+        required: true
+      MANUAL_BASE_REF:
+        description: "By default, the commit entered above is compared to the one directly before it; to go back further, enter an earlier SHA here"
+        required: false
+
+jobs:
+  track:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: JHOFER-Cloud/todo-tracking/.github/workflows/todo-tracking-reusable.yml@main
+    with:
+      runner: "ubuntu-latest"
+      languages: ".github/workflows/syntax.json"
+      manual_commit_ref: ${{ inputs.MANUAL_COMMIT_REF }}
+      manual_base_ref: ${{ inputs.MANUAL_BASE_REF }}
+    secrets:
+      TODO_APP_ID: ${{ secrets.TODO_APP_ID }}
+      TODO_APP_PRIV_KEY: ${{ secrets.TODO_APP_PRIV_KEY }}
+
