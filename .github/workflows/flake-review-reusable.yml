@@ -16,7 +16,7 @@ on:
         type: number
         default: 4
       concurrency-group:
-        description: "Concurrency group for cancelling outdated runs"
+        description: "Concurrency group for cancelling outdated rus"
         type: string
         required: false
     secrets:
