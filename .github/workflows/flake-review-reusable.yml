@@ -19,6 +19,10 @@ on:
         description: "Max parallel build workers"
         type: number
         default: 4
+      packages:
+        description: "Comma-separated list of packages to review (default: all changed packages)"
+        type: string
+        required: false
       concurrency-group:
         description: "Concurrency group for cancelling outdated runs"
         type: string
@@ -72,12 +76,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          pkg_args=()
+          if [ -n "${{ inputs.packages }}" ]; then
+            IFS=',' read -ra pkgs <<< "${{ inputs.packages }}"
+            for p in "${pkgs[@]}"; do
+              pkg_args+=(--package "$p")
+            done
+          fi
           flake-review pr \
             "${{ github.event.pull_request.html_url }}" \
             --systems ${{ matrix.systems }} \
             --max-workers ${{ inputs.max-workers }} \
             --output-file ${{ matrix.name }}-report.json \
-            --output-format json
+            --output-format json \
+            "${pkg_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
