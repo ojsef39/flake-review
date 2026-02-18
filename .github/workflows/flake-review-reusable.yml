@@ -27,10 +27,6 @@ on:
         description: "Concurrency group for cancelling outdated runs"
         type: string
         required: false
-    secrets:
-      CACHIX_AUTH_TOKEN:
-        required: false
-
 concurrency:
   group: ${{ inputs.concurrency-group || format('{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: true
@@ -49,15 +45,9 @@ jobs:
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
-            substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
-            trusted-substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ojsef39.cachix.org-1:Pe8zOhPVMt4fa/2HYlquHkTnGX3EH7lC9xMyCA2zM3Y= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v16
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
         with:
-          name: ojsef39
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+          use-flakehub: false
       - name: Install nix-diff
         run: |
           nix profile add nixpkgs#nix-diff
