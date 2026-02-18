@@ -33,6 +33,8 @@ concurrency:
 
 jobs:
   review:
+    permissions:
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -45,9 +47,12 @@ jobs:
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
-      - uses: DeterminateSystems/magic-nix-cache-action@v13
+      - name: Restore Nix cache
+        uses: nix-community/cache-nix-action@v7
         with:
-          use-flakehub: false
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+          save: "false"
       - name: Install nix-diff
         run: |
           nix profile add nixpkgs#nix-diff
@@ -85,6 +90,16 @@ jobs:
         with:
           name: ${{ matrix.name }}-report
           path: ${{ matrix.name }}-report.json
+      - name: Save Nix cache
+        uses: nix-community/cache-nix-action@v7
+        if: always()
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          gc-max-store-size-linux: 3G
+          gc-max-store-size-macos: 5G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
+          purge-last-accessed: P7D
 
   post-results:
     needs: [review]
