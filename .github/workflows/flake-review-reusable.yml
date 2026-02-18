@@ -43,10 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        uses: nixbuild/nix-quick-install-action@v34
         with:
-          extra-conf: |
+          nix_conf: |
             extra-experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
       - name: Restore Nix cache
         uses: nix-community/cache-nix-action@v7
         with:
@@ -55,7 +57,7 @@ jobs:
           save: "false"
       - name: Install nix-diff
         run: |
-          nix profile add nixpkgs#nix-diff
+          nix profile install nixpkgs#nix-diff
           echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-python@v5
         with:
