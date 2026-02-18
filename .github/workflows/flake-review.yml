@@ -1,7 +1,7 @@
 # Flake-review testing itself via the reusable workflow.
-# Uses flake-ref: ".#flake-review" to test the local build.
+# Installs from the checked-out repo to test the PR's code.
 #
-# For other repos, see flake-review-reusable.yml or use:
+# For other repos, use:
 #   uses: ojsef39/flake-review/.github/workflows/flake-review-reusable.yml@main
 
 name: Flake Review
@@ -18,7 +18,7 @@ jobs:
   review:
     uses: ./.github/workflows/flake-review-reusable.yml
     with:
-      flake-ref: ".#flake-review"
+      install-from-checkout: true
       concurrency-group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
