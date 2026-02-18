@@ -20,5 +20,3 @@ jobs:
     with:
       install-from-checkout: true
       concurrency-group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-    secrets:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
