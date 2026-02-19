@@ -45,10 +45,10 @@ jobs:
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
-      # NOTE: since you cant set a prefix or someting the macos/linux cache can interfere with each other, so disabling for now
-      # - uses: DeterminateSystems/magic-nix-cache-action@v13
-      #   with:
-      #     use-flakehub: false
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+        with:
+          use-flakehub: false
+          use-gha-cache: false
       - name: Install nix-diff
         run: |
           nix profile add nixpkgs#nix-diff
