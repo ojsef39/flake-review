@@ -3,10 +3,14 @@ name: Flake Review (Reusable)
 on:
   workflow_call:
     inputs:
-      flake-ref:
-        description: "Nix flake ref for flake-review"
+      flake-review-ref:
+        description: "flake-review git ref to install (tag, branch, or SHA)"
         type: string
-        default: "github:ojsef39/flake-review#flake-review"
+        default: "main"
+      install-from-checkout:
+        description: "Install flake-review from the checked-out repo (for testing PRs to flake-review itself)"
+        type: boolean
+        default: false
       matrix:
         description: "JSON array of {runner, systems, name} objects"
         type: string
@@ -15,20 +19,22 @@ on:
         description: "Max parallel build workers"
         type: number
         default: 4
+      packages:
+        description: "Comma-separated list of packages to review (default: all changed packages)"
+        type: string
+        required: false
       concurrency-group:
         description: "Concurrency group for cancelling outdated runs"
         type: string
         required: false
-    secrets:
-      CACHIX_AUTH_TOKEN:
-        required: false
-
 concurrency:
   group: ${{ inputs.concurrency-group || format('{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: true
 
 jobs:
   review:
+    permissions:
+      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -36,35 +42,76 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        uses: nixbuild/nix-quick-install-action@v34
         with:
-          extra-conf: |
+          nix_conf: |
             extra-experimental-features = nix-command flakes
-            substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
-            trusted-substituters = https://cache.nixos.org https://ojsef39.cachix.org https://nix-community.cachix.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ojsef39.cachix.org-1:Pe8zOhPVMt4fa/2HYlquHkTnGX3EH7lC9xMyCA2zM3Y= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v16
+            substituters = https://cache.nixos.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+
+      - name: Cache Nix store (Linux)
+        if: runner.os == 'Linux'
+        uses: DeterminateSystems/magic-nix-cache-action@v8
         with:
-          name: ojsef39
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+          use-flakehub: false
+
+      - name: Restore Nix cache (macOS)
+        id: restore
+        if: runner.os == 'macOS'
+        uses: nix-community/cache-nix-action/restore@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install nix-diff
+        run: |
+          nix profile install nixpkgs#nix-diff
+          echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install flake-review
+        run: |
+          if [ "${{ inputs.install-from-checkout }}" = "true" ]; then
+            pip install . --quiet
+          else
+            pip install "git+https://github.com/ojsef39/flake-review.git@${{ inputs.flake-review-ref }}" --quiet
+          fi
       - name: Review ${{ matrix.name }} packages
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          nix run ${{ inputs.flake-ref }} -- pr \
+          pkg_args=()
+          if [ -n "${{ inputs.packages }}" ]; then
+            IFS=',' read -ra pkgs <<< "${{ inputs.packages }}"
+            for p in "${pkgs[@]}"; do
+              pkg_args+=(--package "$p")
+            done
+          fi
+          flake-review pr \
             "${{ github.event.pull_request.html_url }}" \
             --systems ${{ matrix.systems }} \
             --max-workers ${{ inputs.max-workers }} \
             --output-file ${{ matrix.name }}-report.json \
-            --output-format json
+            --output-format json \
+            "${pkg_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ${{ matrix.name }}-report
           path: ${{ matrix.name }}-report.json
+
+      - name: Save Nix cache (macOS)
+        if: always() && runner.os == 'macOS'
+        uses: nix-community/cache-nix-action/save@v7
+        with:
+          primary-key: ${{ steps.restore.outputs.primary-key }}
+          gc-max-store-size-macos: 5G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
+          purge-last-accessed: P7D
 
   post-results:
     needs: [review]
@@ -78,14 +125,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: reports
-      - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+      - uses: actions/setup-python@v5
         with:
-          extra-conf: |
-            extra-experimental-features = nix-command flakes
-            substituters = https://cache.nixos.org https://ojsef39.cachix.org
-            trusted-substituters = https://cache.nixos.org https://ojsef39.cachix.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ojsef39.cachix.org-1:Pe8zOhPVMt4fa/2HYlquHkTnGX3EH7lC9xMyCA2zM3Y=
+          python-version: "3.13"
+      - name: Install flake-review
+        run: |
+          if [ "${{ inputs.install-from-checkout }}" = "true" ]; then
+            pip install . --quiet
+          else
+            pip install "git+https://github.com/ojsef39/flake-review.git@${{ inputs.flake-review-ref }}" --quiet
+          fi
       - name: Merge and post results
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -96,7 +145,7 @@ jobs:
             echo "No report files found - no packages changed across all platforms."
             exit 0
           fi
-          nix run ${{ inputs.flake-ref }} -- merge-reports \
+          flake-review merge-reports \
             "${json_files[@]}" \
             --title "Flake Review Results for [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})" \
             --post-result \
