@@ -42,20 +42,30 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Nix
-        uses: DeterminateSystems/determinate-nix-action@v3.15.2
+        uses: DeterminateSystems/determinate-nix-action@v3
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
             substituters = https://cache.nixos.org https://nix-community.cachix.org
             trusted-substituters = https://cache.nixos.org https://nix-community.cachix.org
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-      - name: Restore Nix cache
+
+      - name: Cache Nix store (Linux)
+        if: runner.os == 'Linux'
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+        with:
+          use-flakehub: false
+
+      - name: Restore Nix cache (macOS)
         id: restore
+        if: runner.os == 'macOS'
         uses: nix-community/cache-nix-action/restore@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install nix-diff
         run: |
           nix profile add nixpkgs#nix-diff
@@ -93,12 +103,12 @@ jobs:
         with:
           name: ${{ matrix.name }}-report
           path: ${{ matrix.name }}-report.json
-      - name: Save Nix cache
+
+      - name: Save Nix cache (macOS)
+        if: always() && runner.os == 'macOS'
         uses: nix-community/cache-nix-action/save@v7
-        if: always()
         with:
           primary-key: ${{ steps.restore.outputs.primary-key }}
-          gc-max-store-size-linux: 3G
           gc-max-store-size-macos: 5G
           purge: true
           purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
