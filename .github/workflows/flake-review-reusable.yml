@@ -50,7 +50,8 @@ jobs:
             substituters = https://cache.nixos.org
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
       - name: Restore Nix cache
-        uses: nix-community/cache-nix-action@v7
+        uses: nix-community/cache-nix-action/restore@v7
+        id: restore
         with:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
@@ -93,11 +94,10 @@ jobs:
           name: ${{ matrix.name }}-report
           path: ${{ matrix.name }}-report.json
       - name: Save Nix cache
-        uses: nix-community/cache-nix-action@v7
         if: always()
+        uses: nix-community/cache-nix-action/save@v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
-          gc-max-store-size-linux: 3G
+          primary-key: ${{ steps.restore.outputs.primary-key }}
           gc-max-store-size-macos: 5G
           purge: true
           purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
