@@ -94,6 +94,9 @@ jobs:
         with:
           name: ${{ matrix.name }}-report
           path: ${{ matrix.name }}-report.json
+      - name: Fix Nix store permissions
+        if: always() && runner.os == 'Linux'
+        run: sudo chmod -R a+r /nix/store
       - name: Save Nix cache
         if: always()
         uses: nix-community/cache-nix-action/save@v7

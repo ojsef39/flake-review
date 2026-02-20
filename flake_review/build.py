@@ -69,8 +69,6 @@ def build_derivation(
                 f"{flake_path}#{derivation.attr_path}",
                 "--no-link",
                 "--print-out-paths",
-                "--substituters",
-                "https://cache.nixos.org",
             ],
             check=False,
         )
