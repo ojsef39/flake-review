@@ -13,7 +13,7 @@ from .flake import ChangeSet, DerivationInfo
 def _get_nix_diff(old_drv: str, new_drv: str, color: bool = False) -> str | None:
     """Run nix-diff between two derivations."""
     try:
-        cmd = ["nix-diff", old_drv, new_drv]
+        cmd = ["nix-diff", "--character-oriented", old_drv, new_drv]
         if color:
             cmd.extend(["--color", "always"])
         # NIX_REMOTE="" forces local store access, avoiding daemon
