@@ -55,20 +55,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install flake-review
+      - &install-flake-review
+        name: Install flake-review
+        env:
+          FLAKE_REVIEW_REF: ${{ inputs.flake-review-ref }}
         run: |
           if [ "${{ inputs.install-from-checkout }}" = "true" ]; then
             pip install . --quiet
           else
-            pip install "git+https://github.com/ojsef39/flake-review.git@${{ inputs.flake-review-ref }}" --quiet
+            pip install "git+https://github.com/ojsef39/flake-review.git@${FLAKE_REVIEW_REF}" --quiet
           fi
       - name: Review ${{ matrix.name }} packages
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PACKAGES: ${{ inputs.packages }}
         run: |
           pkg_args=()
-          if [ -n "${{ inputs.packages }}" ]; then
-            IFS=',' read -ra pkgs <<< "${{ inputs.packages }}"
+          if [ -n "$PACKAGES" ]; then
+            IFS=',' read -ra pkgs <<< "$PACKAGES"
             for p in "${pkgs[@]}"; do
               pkg_args+=(--package "$p")
             done
@@ -101,13 +105,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install flake-review
-        run: |
-          if [ "${{ inputs.install-from-checkout }}" = "true" ]; then
-            pip install . --quiet
-          else
-            pip install "git+https://github.com/ojsef39/flake-review.git@${{ inputs.flake-review-ref }}" --quiet
-          fi
+      - *install-flake-review
       - name: Merge and post results
         env:
           GITHUB_TOKEN: ${{ github.token }}
