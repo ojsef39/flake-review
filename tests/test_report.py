@@ -6,6 +6,7 @@ from flake_review.build import BuildResult, BuildResults
 from flake_review.flake import ChangeSet, DerivationInfo
 from flake_review.report import (
     _render_markdown_from_json,
+    _strip_ansi,
     format_detailed_changes,
     generate_json_report,
     generate_markdown_report,
@@ -348,3 +349,147 @@ def test_build_results_properties() -> None:
     assert len(results.failed) == 1
     assert results.successful[0].derivation.name == "success"
     assert results.failed[0].derivation.name == "failure"
+
+
+def test_render_markdown_from_json_strips_ansi_diff_compat() -> None:
+    """Test markdown rendering strips ANSI escapes from compatibility fields."""
+    data = {
+        "version": 1,
+        "metadata": {"requested_systems": [], "available_systems": []},
+        "changes": {
+            "added": [],
+            "removed": [],
+            "modified": [
+                {
+                    "old": {
+                        "attr_path": "packages.x86_64-linux.pkg",
+                        "drv_path": "/nix/store/old.drv",
+                        "output_type": "packages",
+                        "system": "x86_64-linux",
+                        "name": "pkg",
+                    },
+                    "new": {
+                        "attr_path": "packages.x86_64-linux.pkg",
+                        "drv_path": "/nix/store/new.drv",
+                        "output_type": "packages",
+                        "system": "x86_64-linux",
+                        "name": "pkg",
+                    },
+                    "nix_diff": "- old\n+ new",
+                    "nix_diff_ansi": "\u001b[31m- old\u001b[0m\n"
+                    "\u001b[32m+ new\u001b[0m",
+                    "build": None,
+                }
+            ],
+        },
+    }
+
+    md = _render_markdown_from_json(data, title="Test ANSI")
+
+    assert "```diff" in md
+    assert "```ansi" not in md
+    assert "\u001b[31m" not in md
+
+
+def test_ansi_helpers() -> None:
+    """Test ANSI stripping helper."""
+    text = "\u001b[31mred\u001b[0m"
+    assert _strip_ansi(text) == "red"
+    assert _strip_ansi(None) is None
+
+
+def test_generate_json_report_stores_plain_diff() -> None:
+    """Test JSON report stores plain nix-diff output."""
+    old_drv = DerivationInfo(
+        attr_path="packages.x86_64-linux.pkg",
+        drv_path="/nix/store/old.drv",
+        output_type="packages",
+        system="x86_64-linux",
+        name="pkg",
+    )
+    new_drv = DerivationInfo(
+        attr_path="packages.x86_64-linux.pkg",
+        drv_path="/nix/store/new.drv",
+        output_type="packages",
+        system="x86_64-linux",
+        name="pkg",
+    )
+    changes = ChangeSet(added=[], removed=[], modified=[(old_drv, new_drv)])
+    results = BuildResults(results=[])
+
+    with patch(
+        "flake_review.report._get_nix_diff",
+        return_value="- old\n+ new",
+    ):
+        data = generate_json_report(changes, results)
+
+    entry = data["changes"]["modified"][0]
+    assert entry["nix_diff"] == "- old\n+ new"
+    assert entry["nix_diff_ansi"] == "- old\n+ new"
+
+
+def test_generate_json_report_strips_ansi_from_cached_diff() -> None:
+    """Test JSON report strips ANSI escapes from cached nix-diff output."""
+    old_drv = DerivationInfo(
+        attr_path="packages.x86_64-linux.pkg",
+        drv_path="/nix/store/old.drv",
+        output_type="packages",
+        system="x86_64-linux",
+        name="pkg",
+    )
+    new_drv = DerivationInfo(
+        attr_path="packages.x86_64-linux.pkg",
+        drv_path="/nix/store/new.drv",
+        output_type="packages",
+        system="x86_64-linux",
+        name="pkg",
+    )
+    changes = ChangeSet(added=[], removed=[], modified=[(old_drv, new_drv)])
+    results = BuildResults(results=[])
+    cache = {
+        ("/nix/store/old.drv", "/nix/store/new.drv"): "\u001b[31m- old\u001b[0m\n"
+        "\u001b[32m+ new\u001b[0m"
+    }
+
+    data = generate_json_report(changes, results, nix_diffs=cache)
+    entry = data["changes"]["modified"][0]
+    assert entry["nix_diff"] == "- old\n+ new"
+    assert "\u001b[31m" in (entry["nix_diff_ansi"] or "")
+
+
+def test_render_markdown_from_json_ansi_when_enabled() -> None:
+    """Test markdown rendering keeps ANSI when explicitly enabled."""
+    data = {
+        "version": 1,
+        "metadata": {"requested_systems": [], "available_systems": []},
+        "changes": {
+            "added": [],
+            "removed": [],
+            "modified": [
+                {
+                    "old": {
+                        "attr_path": "packages.x86_64-linux.pkg",
+                        "drv_path": "/nix/store/old.drv",
+                        "output_type": "packages",
+                        "system": "x86_64-linux",
+                        "name": "pkg",
+                    },
+                    "new": {
+                        "attr_path": "packages.x86_64-linux.pkg",
+                        "drv_path": "/nix/store/new.drv",
+                        "output_type": "packages",
+                        "system": "x86_64-linux",
+                        "name": "pkg",
+                    },
+                    "nix_diff": "- old\n+ new",
+                    "nix_diff_ansi": "\u001b[31m- old\u001b[0m\n"
+                    "\u001b[32m+ new\u001b[0m",
+                    "build": None,
+                }
+            ],
+        },
+    }
+
+    md = _render_markdown_from_json(data, title="ANSI", markdown_ansi=True)
+
+    assert "\u001b[31m" in md

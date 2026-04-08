@@ -2,7 +2,7 @@
 
 import pytest
 
-from flake_review.github import PullRequest, parse_pr_url
+from flake_review.github import GithubClient, PullRequest, parse_pr_url
 
 
 def test_parse_pr_url_full() -> None:
@@ -72,3 +72,49 @@ def test_pull_request_fork() -> None:
     assert pr.is_fork is True
     assert pr.head_repo_url == "https://github.com/fork/repo.git"
     assert pr.url == "https://github.com/upstream/repo/pull/456"
+
+
+def test_truncate_comment_body_no_truncation() -> None:
+    """Test comment body remains unchanged when below max length."""
+    client = GithubClient.__new__(GithubClient)
+    body = "short comment"
+    assert client._truncate_comment_body(body) == body
+
+
+def test_truncate_comment_body_with_ci_link(monkeypatch) -> None:  # type: ignore
+    """Test truncation appends notice and CI run URL."""
+    client = GithubClient.__new__(GithubClient)
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+
+    body = "A" * (GithubClient._MAX_COMMENT_BODY_LENGTH + 1000)
+    truncated = client._truncate_comment_body(body)
+
+    assert "Report truncated" in truncated
+    assert "https://github.com/owner/repo/actions/runs/12345" in truncated
+    marker_len = len(f"{GithubClient._COMMENT_MARKER}\n")
+    assert len(truncated) <= GithubClient._MAX_COMMENT_BODY_LENGTH - marker_len
+
+
+def test_truncate_comment_body_closes_markdown_blocks() -> None:
+    """Test truncation closes open code fences and details blocks."""
+    client = GithubClient.__new__(GithubClient)
+    body = "<details>\n```diff\n" + ("x" * 70000)
+
+    truncated = client._truncate_comment_body(body)
+
+    assert truncated.count("```") % 2 == 0
+    assert truncated.count("<details>") <= truncated.count("</details>")
+    assert "\n  ```" in truncated
+    assert "\n  </details>" in truncated
+
+
+def test_truncate_comment_body_closes_multiple_details() -> None:
+    """Test truncation closes all open details blocks."""
+    client = GithubClient.__new__(GithubClient)
+    body = "<details>\n<details>\n" + ("x" * 70000)
+
+    truncated = client._truncate_comment_body(body)
+
+    assert truncated.count("<details>") <= truncated.count("</details>")
