@@ -44,7 +44,7 @@
 
         flakeReview = python.pkgs.buildPythonApplication {
           pname = "flake-review";
-          version = "0.1.0";
+          version = "0.1.1";
 
           src = pkgs.lib.sources.sourceFilesBySuffices ./. [
             ".py"
