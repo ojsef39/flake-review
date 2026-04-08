@@ -44,6 +44,9 @@ class PullRequest:
 class GithubClient:
     """Client for interacting with GitHub API."""
 
+    _COMMENT_MARKER = "<!-- flake-review -->"
+    _MAX_COMMENT_BODY_LENGTH = 65536
+
     def __init__(self, token: str | None = None):
         self.token = (
             token or self._get_token_from_env() or self._get_token_from_gh_cli()
@@ -129,7 +132,59 @@ class GithubClient:
             head_repo_url=head_repo_url,
         )
 
-    _COMMENT_MARKER = "<!-- flake-review -->"
+    def _get_workflow_run_url(self) -> str | None:
+        """Get the current GitHub Actions run URL, if available."""
+        server_url = os.environ.get("GITHUB_SERVER_URL")
+        repository = os.environ.get("GITHUB_REPOSITORY")
+        run_id = os.environ.get("GITHUB_RUN_ID")
+        if server_url and repository and run_id:
+            return f"{server_url}/{repository}/actions/runs/{run_id}"
+        return None
+
+    def _truncate_comment_body(self, body: str) -> str:
+        """Truncate comment body to fit GitHub's comment size limit."""
+        marker_prefix = f"{self._COMMENT_MARKER}\n"
+        max_body_len = self._MAX_COMMENT_BODY_LENGTH - len(marker_prefix)
+
+        if len(body) <= max_body_len:
+            return body
+
+        notice_lines = [
+            "",
+            "",
+            "---",
+            (
+                "Note: Report truncated to fit GitHub's "
+                f"{self._MAX_COMMENT_BODY_LENGTH} character comment limit."
+            ),
+        ]
+        workflow_run_url = self._get_workflow_run_url()
+        if workflow_run_url:
+            notice_lines.append(f"Full report in CI logs: {workflow_run_url}")
+        notice = "\n".join(notice_lines)
+
+        if len(notice) >= max_body_len:
+            return notice[:max_body_len]
+
+        keep_len = max_body_len - len(notice)
+        truncated = body[:keep_len].rstrip()
+
+        indent = "  "
+        closure = ""
+        if truncated.count("```") % 2 == 1:
+            closure += f"\n{indent}```"
+
+        open_details = truncated.count("<details>") - truncated.count("</details>")
+        if open_details > 0:
+            closure += (f"\n{indent}</details>") * open_details
+
+        if closure:
+            available = keep_len - len(closure)
+            if available < 0:
+                available = 0
+            truncated = body[:available].rstrip() + closure
+
+        return f"{truncated}{notice}"
 
     def _find_existing_comment(self, pr: PullRequest) -> int | None:
         """Find an existing flake-review comment on a PR."""
@@ -142,7 +197,8 @@ class GithubClient:
 
     def post_comment(self, pr: PullRequest, body: str) -> None:
         """Post or update a flake-review comment on a pull request."""
-        body_with_marker = f"{self._COMMENT_MARKER}\n{body}"
+        safe_body = self._truncate_comment_body(body)
+        body_with_marker = f"{self._COMMENT_MARKER}\n{safe_body}"
 
         existing_id = self._find_existing_comment(pr)
         if existing_id:

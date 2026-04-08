@@ -12,9 +12,15 @@ from . import __version__
 from .build import build_changes
 from .flake import FlakeOutputs, compare_outputs
 from .github import GithubClient, parse_pr_url
-from .report import (generate_json_report, generate_markdown_report,
-                     load_json_report, merge_json_reports,
-                     merge_markdown_reports, print_console_report)
+from .report import (
+    collect_nix_diffs,
+    generate_json_report,
+    generate_markdown_report,
+    load_json_report,
+    merge_json_reports,
+    merge_markdown_reports,
+    print_console_report,
+)
 from .utils import GitWorktree, get_current_system, get_git_root, run_command
 
 
@@ -57,6 +63,7 @@ def _review_changes(
     output_format = getattr(args, "output_format", "md")
     show_result = getattr(args, "show_result", False)
     post_result = getattr(args, "post_result", False)
+    markdown_ansi = output_file is not None and not post_result
 
     if total_changes == 0:
         print("No changes detected.")
@@ -69,7 +76,9 @@ def _review_changes(
 
         results = BuildResults(results=[])
 
-    print_console_report(changes, results)
+    nix_diffs = collect_nix_diffs(changes)
+
+    print_console_report(changes, results, nix_diffs=nix_diffs)
 
     if output_file and output_format == "json":
         import json
@@ -79,6 +88,7 @@ def _review_changes(
             results,
             requested_systems=systems,
             available_systems=available_systems,
+            nix_diffs=nix_diffs,
         )
         Path(output_file).write_text(json.dumps(json_data, indent=2))
         print(f"Report written to {output_file}")
@@ -91,6 +101,8 @@ def _review_changes(
             title=title,
             requested_systems=systems,
             available_systems=available_systems,
+            nix_diffs=nix_diffs,
+            markdown_ansi=markdown_ansi,
         )
 
     if markdown and output_file and output_format != "json":
@@ -277,7 +289,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 def cmd_merge_reports(args: argparse.Namespace) -> int:
     """Merge multiple report files into one."""
+    if args.post_result and not args.pr_url:
+        print("Error: --pr-url is required with --post-result", file=sys.stderr)
+        return 1
+
     is_json = False
+    merged_for_post: str | None = None
     try:
         load_json_report(args.report_files[0])
         is_json = True
@@ -285,7 +302,18 @@ def cmd_merge_reports(args: argparse.Namespace) -> int:
         pass
 
     if is_json:
-        merged = merge_json_reports(args.report_files, title=args.title)
+        merged = merge_json_reports(
+            args.report_files,
+            title=args.title,
+            markdown_ansi=not args.post_result,
+        )
+        if args.post_result:
+            merged_for_post = merged
+            merged = merge_json_reports(
+                args.report_files,
+                title=args.title,
+                markdown_ansi=True,
+            )
     else:
         merged = merge_markdown_reports(args.report_files, title=args.title)
 
@@ -299,7 +327,7 @@ def cmd_merge_reports(args: argparse.Namespace) -> int:
         owner, repo, pr_number = parse_pr_url(args.pr_url)
         client = GithubClient()
         pr = client.get_pull_request(owner, repo, pr_number)
-        client.post_comment(pr, merged)
+        client.post_comment(pr, merged_for_post or merged)
         print(f"✅ Posted results to {pr.url}")
 
     return 0
