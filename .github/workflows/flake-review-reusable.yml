@@ -121,3 +121,8 @@ jobs:
             --title "Flake Review Results for [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})" \
             --post-result \
             --pr-url "${{ github.event.pull_request.html_url }}"
+      - name: Fail if any review job failed
+        if: needs.review.result != 'success' && needs.review.result != 'skipped'
+        run: |
+          echo "One or more review matrix jobs did not succeed (result: ${{ needs.review.result }})"
+          exit 1
