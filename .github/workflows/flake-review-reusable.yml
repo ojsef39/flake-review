@@ -27,6 +27,10 @@ on:
         description: "Concurrency group for cancelling outdated runs"
         type: string
         required: false
+      pr-url:
+        description: "PR URL to review (defaults to the triggering pull_request event)"
+        type: string
+        default: ${{ github.event.pull_request.html_url }}
 concurrency:
   group: ${{ inputs.concurrency-group || format('{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: true
@@ -69,7 +73,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PACKAGES: ${{ inputs.packages }}
+          PR_URL: ${{ inputs.pr-url }}
         run: |
+          if [ -z "$PR_URL" ]; then
+            echo "pr-url input is empty and no pull_request event context is available."
+            exit 1
+          fi
           pkg_args=()
           if [ -n "$PACKAGES" ]; then
             IFS=',' read -ra pkgs <<< "$PACKAGES"
@@ -78,7 +87,7 @@ jobs:
             done
           fi
           flake-review pr \
-            "${{ github.event.pull_request.html_url }}" \
+            "$PR_URL" \
             --systems ${{ matrix.systems }} \
             --max-workers ${{ inputs.max-workers }} \
             --output-file ${{ matrix.name }}-report.json \
@@ -109,6 +118,7 @@ jobs:
       - name: Merge and post results
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PR_URL: ${{ inputs.pr-url }}
         run: |
           shopt -s nullglob
           json_files=(reports/*/*.json)
@@ -116,11 +126,12 @@ jobs:
             echo "No report files found - no packages changed across all platforms."
             exit 0
           fi
+          PR_NUMBER="${PR_URL##*/}"
           flake-review merge-reports \
             "${json_files[@]}" \
-            --title "Flake Review Results for [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})" \
+            --title "Flake Review Results for [#${PR_NUMBER}](${PR_URL})" \
             --post-result \
-            --pr-url "${{ github.event.pull_request.html_url }}"
+            --pr-url "$PR_URL"
       - name: Fail if any review job failed
         if: needs.review.result != 'success' && needs.review.result != 'skipped'
         run: |

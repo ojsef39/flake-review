@@ -9,6 +9,12 @@ name: Flake Review
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr-url:
+        description: "PR URL to review"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -20,3 +26,4 @@ jobs:
     with:
       install-from-checkout: true
       concurrency-group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      pr-url: ${{ inputs.pr-url || github.event.pull_request.html_url }}
