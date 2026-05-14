@@ -1,0 +1,32 @@
+# Flake-review testing itself via the build half of the reusable pattern.
+# Installs from the checked-out repo to test the PR's code.
+#
+# Pair with flake-review-comment.yml, which runs after this completes and
+# posts the result. See flake-review-{build,comment}-reusable.yml for the
+# reusable workflows external repos should call.
+
+name: Flake Review Build
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr-url:
+        description: "PR URL to review"
+        type: string
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr-url || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/flake-review-build-reusable.yml
+    with:
+      install-from-checkout: true
+      pr-url: ${{ inputs.pr-url || github.event.pull_request.html_url }}

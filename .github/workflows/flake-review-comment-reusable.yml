@@ -1,0 +1,103 @@
+name: Flake Review Comment (Reusable)
+
+# Comment half of the fork-safe two-workflow pattern. Triggered from a
+# workflow_run consumer in the calling repo, so it runs in base-repo context
+# with a writable GITHUB_TOKEN — including for fork PRs.
+
+on:
+  workflow_call:
+    inputs:
+      flake-review-ref:
+        description: "flake-review git ref to install (tag, branch, or SHA)"
+        type: string
+        default: "main"
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    # Don't bother posting if the upstream run was cancelled.
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install flake-review
+        env:
+          FLAKE_REVIEW_REF: ${{ inputs.flake-review-ref }}
+        run: |
+          pip install "git+https://github.com/ojsef39/flake-review.git@${FLAKE_REVIEW_REF}" --quiet
+
+      - name: Download artifacts from triggering run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: artifacts
+          pattern: flake-review-*
+
+      - name: Determine PR URL
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TYPE: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_URL=""
+          PR_NUMBER=""
+
+          # For pull_request triggers, trust the head_sha → PR lookup over the
+          # artifact (a malicious fork could otherwise write a spoofed pr-url).
+          if [ "$EVENT_TYPE" = "pull_request" ]; then
+            PR_NUMBER=$(gh api "/repos/${REPO}/commits/${HEAD_SHA}/pulls" -q '.[0].number' 2>/dev/null || true)
+            if [ -n "$PR_NUMBER" ]; then
+              PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+            fi
+          fi
+
+          # For workflow_dispatch (or if head_sha lookup found nothing), fall back
+          # to the URL the build job wrote into the artifact.
+          if [ -z "$PR_URL" ] && [ -f artifacts/flake-review-pr-info/pr-url.txt ]; then
+            PR_URL=$(cat artifacts/flake-review-pr-info/pr-url.txt)
+            if [[ ! "$PR_URL" =~ /pull/([0-9]+)(/|$|[?#]) ]]; then
+              echo "::error::Invalid PR URL in artifact: $PR_URL" >&2
+              exit 1
+            fi
+            PR_NUMBER="${BASH_REMATCH[1]}"
+          fi
+
+          if [ -z "$PR_URL" ] || [ -z "$PR_NUMBER" ]; then
+            echo "::error::Could not determine PR for triggering run (event=${EVENT_TYPE}, head_sha=${HEAD_SHA})." >&2
+            exit 1
+          fi
+
+          echo "pr-url=$PR_URL" >> "$GITHUB_OUTPUT"
+          echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Merge and post results
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_URL: ${{ steps.pr.outputs.pr-url }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr-number }}
+        run: |
+          shopt -s nullglob
+          json_files=(artifacts/flake-review-report-*/*.json)
+          if [ "${#json_files[@]}" -eq 0 ]; then
+            echo "No report files found - no packages changed across all platforms."
+            exit 0
+          fi
+          flake-review merge-reports \
+            "${json_files[@]}" \
+            --title "Flake Review Results for [#${PR_NUMBER}](${PR_URL})" \
+            --post-result \
+            --pr-url "$PR_URL"
+
+      - name: Fail if triggering build did not succeed
+        if: github.event.workflow_run.conclusion != 'success'
+        run: |
+          echo "Triggering workflow concluded as: ${{ github.event.workflow_run.conclusion }}"
+          exit 1
