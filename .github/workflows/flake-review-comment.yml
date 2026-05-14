@@ -1,0 +1,19 @@
+# Comment half of the self-test. Triggered by the completion of "Flake Review Build".
+# Runs from main (workflow_run always reads the default branch's copy of this file),
+# in base-repo context, with a writable token — so it can post on fork PRs too.
+
+name: Flake Review Comment
+
+on:
+  workflow_run:
+    workflows: ["Flake Review Build"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    uses: ./.github/workflows/flake-review-comment-reusable.yml
