@@ -76,7 +76,7 @@ jobs:
           PR_URL: ${{ inputs.pr-url }}
         run: |
           if [ -z "$PR_URL" ]; then
-            echo "pr-url input is empty and no pull_request event context is available."
+            echo "::error::pr-url input is empty and no pull_request event context is available." >&2
             exit 1
           fi
           pkg_args=()
@@ -120,13 +120,21 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PR_URL: ${{ inputs.pr-url }}
         run: |
+          if [ -z "$PR_URL" ]; then
+            echo "::error::pr-url input is empty and no pull_request event context is available." >&2
+            exit 1
+          fi
+          if [[ ! "$PR_URL" =~ /pull/([0-9]+)(/|$|[?#]) ]]; then
+            echo "::error::pr-url does not look like a GitHub PR URL: $PR_URL" >&2
+            exit 1
+          fi
+          PR_NUMBER="${BASH_REMATCH[1]}"
           shopt -s nullglob
           json_files=(reports/*/*.json)
           if [ "${#json_files[@]}" -eq 0 ]; then
             echo "No report files found - no packages changed across all platforms."
             exit 0
           fi
-          PR_NUMBER="${PR_URL##*/}"
           flake-review merge-reports \
             "${json_files[@]}" \
             --title "Flake Review Results for [#${PR_NUMBER}](${PR_URL})" \

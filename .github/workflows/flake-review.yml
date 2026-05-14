@@ -25,5 +25,5 @@ jobs:
     uses: ./.github/workflows/flake-review-reusable.yml
     with:
       install-from-checkout: true
-      concurrency-group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      concurrency-group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr-url || github.ref }}
       pr-url: ${{ inputs.pr-url || github.event.pull_request.html_url }}
