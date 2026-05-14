@@ -63,7 +63,61 @@ flake-review compare main feature-branch
 
 ## CI/CD Integration
 
-For automated PR reviews in GitHub Actions, use the reusable workflow:
+flake-review ships two pairs of reusable workflows.
+
+### Fork-safe (recommended)
+
+GitHub gives fork PRs a read-only `GITHUB_TOKEN`, so a single workflow can't both build and post a comment back to the PR. The fork-safe setup splits the work into two files: the build runs on `pull_request` (read-only is fine), uploads its report as an artifact, and a second workflow triggered via `workflow_run` runs in base-repo context with a writable token and posts the comment.
+
+In the consuming repo:
+
+```yaml
+# .github/workflows/flake-review-build.yml
+name: Flake Review Build
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      pr-url:
+        description: "PR URL to review"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ojsef39/flake-review/.github/workflows/flake-review-build-reusable.yml@main
+    with:
+      pr-url: ${{ inputs.pr-url || github.event.pull_request.html_url }}
+```
+
+```yaml
+# .github/workflows/flake-review-comment.yml
+name: Flake Review Comment
+on:
+  workflow_run:
+    workflows: ["Flake Review Build"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  comment:
+    uses: ojsef39/flake-review/.github/workflows/flake-review-comment-reusable.yml@main
+```
+
+The `workflow_run` workflow always runs from the default branch's copy of the file, so PR authors can't modify it — fork PRs are safe.
+
+The `workflow_dispatch` input lets maintainers re-run flake-review against an arbitrary PR URL from the Actions tab.
+
+### Single-workflow (same-repo PRs only)
+
+If you don't need fork support, the original single-workflow form still works:
 
 ```yaml
 name: Review
@@ -73,7 +127,9 @@ jobs:
     uses: ojsef39/flake-review/.github/workflows/flake-review-reusable.yml@main
 ```
 
-See [flake-review-reusable.yml](.github/workflows/flake-review-reusable.yml) for customization options.
+This posts comments inline but fails on fork PRs (no write token).
+
+See [flake-review-build-reusable.yml](.github/workflows/flake-review-build-reusable.yml), [flake-review-comment-reusable.yml](.github/workflows/flake-review-comment-reusable.yml), and [flake-review-reusable.yml](.github/workflows/flake-review-reusable.yml) for inputs.
 
 ## Requirements
 
