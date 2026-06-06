@@ -30,3 +30,6 @@ jobs:
     with:
       install-from-checkout: true
       pr-url: ${{ inputs.pr-url || github.event.pull_request.html_url }}
+      cachix-cache: ojsef39
+    secrets:
+      cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}

@@ -9,6 +9,7 @@ A review tool for Nix flake pull requests, inspired by [nixpkgs-review](https://
 - Show derivation diffs via [nix-diff](https://github.com/Gabriella439/nix-diff) (if available)
 - Post results as GitHub PR comments (with automatic upsert)
 - Support for fork PRs
+- Push builds to [Cachix](https://www.cachix.org/)
 
 ## Usage
 
@@ -31,6 +32,9 @@ flake-review pr https://github.com/owner/repo/pull/123 --post-result
 
 # Compare without building
 flake-review pr https://github.com/owner/repo/pull/123 --no-build
+
+# Push builds to a Cachix cache (needs cachix in PATH, auth via CACHIX_AUTH_TOKEN or cachix config)
+flake-review pr https://github.com/owner/repo/pull/123 --cachix my-cache
 ```
 
 ### Review local changes
@@ -58,6 +62,7 @@ flake-review compare main feature-branch
 | `--systems <list>`     | Comma-separated systems to build for (default: current) |
 | `--no-build`           | Only compare outputs, skip building                     |
 | `--max-workers <n>`    | Max parallel build workers (default: 4)                 |
+| `--cachix <cache>`     | Push successful builds to this Cachix cache             |
 | `--post-result`        | Post results as GitHub PR comment                       |
 | `--show-result`        | Print the markdown report to console                    |
 
@@ -128,6 +133,22 @@ jobs:
 ```
 
 This posts comments inline but fails on fork PRs (no write token).
+
+### Cachix
+
+To push builds to a [Cachix](https://www.cachix.org/) cache, pass the cache name and an auth token:
+
+```yaml
+jobs:
+  build:
+    uses: ojsef39/flake-review/.github/workflows/flake-review-build-reusable.yml@main
+    with:
+      cachix-cache: my-cache
+    secrets:
+      cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+```
+
+The cache is push-only by default. Set `cachix-skip-substituter: false` if builds should also pull from it. Fork PRs don't get secrets, so the push is skipped there.
 
 See [flake-review-build-reusable.yml](.github/workflows/flake-review-build-reusable.yml), [flake-review-comment-reusable.yml](.github/workflows/flake-review-comment-reusable.yml), and [flake-review-reusable.yml](.github/workflows/flake-review-reusable.yml) for inputs.
 

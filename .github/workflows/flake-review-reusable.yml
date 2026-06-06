@@ -31,6 +31,18 @@ on:
         description: "PR URL to review (defaults to the triggering pull_request event)"
         type: string
         default: ${{ github.event.pull_request.html_url }}
+      cachix-cache:
+        description: "Cachix cache name to push successful builds to"
+        type: string
+        required: false
+      cachix-skip-substituter:
+        description: "Don't add the cachix cache as a substituter (push-only); set to false to also pull from it"
+        type: boolean
+        default: true
+    secrets:
+      cachix-auth-token:
+        description: "Cachix auth token (push is skipped when absent, e.g. on fork PRs)"
+        required: false
 concurrency:
   group: ${{ inputs.concurrency-group || format('{0}-{1}', github.workflow, github.ref) }}
   cancel-in-progress: true
@@ -52,6 +64,15 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@v13
         with:
           use-flakehub: false
+      - name: Set up Cachix
+        if: inputs.cachix-cache
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ inputs.cachix-cache }}
+          authToken: ${{ secrets.cachix-auth-token }}
+          # flake-review pushes successful builds itself via --cachix
+          skipPush: true
+          skipAddingSubstituter: ${{ inputs.cachix-skip-substituter }}
       - name: Install nix-diff
         run: |
           nix profile add nixpkgs#nix-diff
@@ -74,6 +95,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PACKAGES: ${{ inputs.packages }}
           PR_URL: ${{ inputs.pr-url }}
+          CACHIX_CACHE: ${{ inputs.cachix-cache }}
+          CACHIX_AUTH_TOKEN: ${{ secrets.cachix-auth-token }}
         run: |
           if [ -z "$PR_URL" ]; then
             echo "::error::pr-url input is empty and no pull_request event context is available." >&2
@@ -86,13 +109,20 @@ jobs:
               pkg_args+=(--package "$p")
             done
           fi
+          cachix_args=()
+          if [ -n "$CACHIX_CACHE" ] && [ -n "$CACHIX_AUTH_TOKEN" ]; then
+            cachix_args=(--cachix "$CACHIX_CACHE")
+          elif [ -n "$CACHIX_CACHE" ]; then
+            echo "::notice::cachix-auth-token not available (fork PR?); skipping cachix push."
+          fi
           flake-review pr \
             "$PR_URL" \
             --systems ${{ matrix.systems }} \
             --max-workers ${{ inputs.max-workers }} \
             --output-file ${{ matrix.name }}-report.json \
             --output-format json \
-            "${pkg_args[@]}"
+            "${pkg_args[@]}" \
+            "${cachix_args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
