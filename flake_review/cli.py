@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__
 from .build import build_changes
+from .cachix import push_to_cachix
 from .flake import FlakeOutputs, compare_outputs
 from .github import GithubClient, parse_pr_url
 from .report import (
@@ -76,6 +77,11 @@ def _review_changes(
 
         results = BuildResults(results=[])
 
+    cachix_ok = True
+    cachix_cache = getattr(args, "cachix", None)
+    if cachix_cache and results.successful:
+        cachix_ok = push_to_cachix(cachix_cache, results)
+
     nix_diffs = collect_nix_diffs(changes)
 
     print_console_report(changes, results, nix_diffs=nix_diffs)
@@ -122,7 +128,7 @@ def _review_changes(
             print(f"Error posting to GitHub: {e}", file=sys.stderr)
             return 1
 
-    return 1 if results.failure_count > 0 else 0
+    return 1 if results.failure_count > 0 or not cachix_ok else 0
 
 
 def cmd_pr(args: argparse.Namespace) -> int:
@@ -358,6 +364,14 @@ def _add_common_args(p: argparse.ArgumentParser, *, has_build: bool = True) -> N
             type=int,
             default=4,
             help="Maximum number of parallel build workers (default: 4)",
+        )
+        p.add_argument(
+            "--cachix",
+            metavar="CACHE",
+            help=(
+                "Push successful builds to this Cachix cache "
+                "(needs cachix in PATH, auth via CACHIX_AUTH_TOKEN or cachix config)"
+            ),
         )
 
 
