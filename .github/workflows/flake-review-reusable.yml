@@ -55,7 +55,7 @@ jobs:
         include: ${{ fromJSON(inputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@v3.21.0
         with:
@@ -137,7 +137,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           path: reports
