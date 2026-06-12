@@ -119,7 +119,7 @@ jobs:
             --output-format json \
             "${pkg_args[@]}" \
             "${cachix_args[@]}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: flake-review-report-${{ matrix.name }}
@@ -140,7 +140,7 @@ jobs:
           fi
           mkdir -p out
           printf '%s' "$PR_URL" > out/pr-url.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flake-review-pr-info
           path: out/pr-url.txt
