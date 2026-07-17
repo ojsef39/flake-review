@@ -77,7 +77,7 @@ jobs:
         run: |
           nix profile add nixpkgs#nix-diff
           echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - &install-flake-review
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: reports
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - *install-flake-review
