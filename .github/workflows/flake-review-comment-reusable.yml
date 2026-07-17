@@ -22,7 +22,7 @@ jobs:
     # Don't bother posting if the upstream run was cancelled.
     if: github.event.workflow_run.conclusion != 'cancelled'
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - name: Install flake-review
