@@ -25,6 +25,9 @@ def _get_nix_diff(old_drv: str, new_drv: str) -> str | None:
     try:
         cmd = [
             "nix-diff",
+            "--skip-already-compared",
+            "--context",
+            "10",
             "--line-oriented",
             "--color",
             "always",
