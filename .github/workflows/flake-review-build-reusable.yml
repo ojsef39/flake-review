@@ -58,7 +58,7 @@ jobs:
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
-      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
         with:
           use-flakehub: false
       - name: Set up Cachix
